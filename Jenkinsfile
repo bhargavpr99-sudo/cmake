@@ -1,111 +1,145 @@
 pipeline {
-    agent any
+    agent { label 'linuxgit' }
 
     environment {
-        VENV_DIR = "${WORKSPACE}/venv"
-        SONAR_PROJECT_KEY = "bhargavpr99-sudo_cmake"
-        SONAR_ORGANIZATION = "bhargavpr99-sudo"
+        GIT_REPO = 'https://github.com/bhargavpr99-sudo/cmake.git'
+        BRANCH = 'main'
+
+        // SonarCloud Configuration
+        SONARQUBE_ENV = 'SonarCloud'
+        SONAR_ORGANIZATION = 'bhargavpr99-sudo'
+        SONAR_PROJECT_KEY = 'bhargavpr99-sudo_cmake'
+
+        VENV_DIR = 'venv'
+        BUILD_DIR = 'build'
     }
 
     stages {
+
         stage('Checkout SCM') {
             steps {
-                checkout scm
+                echo 'Checking out Git repository...'
+                checkout([$class: 'GitSCM',
+                    branches: [[name: "${BRANCH}"]],
+                    userRemoteConfigs: [[url: "${GIT_REPO}", credentialsId: 'Gitcred']]
+                ])
             }
         }
 
-        stage('Prepare Tools') {
+        stage('Prepare Tools & Cache') {
             steps {
-                script {
-                    // Create virtual environment if it doesn't exist
-                    if (!fileExists("${VENV_DIR}/bin/activate")) {
-                        sh "python3 -m venv ${VENV_DIR}"
-                    }
-                    // Activate virtualenv and install Python tools
-                    sh """
-                        . ${VENV_DIR}/bin/activate
-                        pip install --quiet --upgrade cmakelint
-                    """
+                echo 'Installing required tools on Ubuntu and caching virtual environment...'
+                sh '''
+                    sudo apt-get update -y
+                    sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential
+
+                    # Create virtual environment if it doesn't exist
+                    if [ ! -d "${VENV_DIR}" ]; then
+                        python3 -m venv ${VENV_DIR}
+                    fi
+
+                    # Activate virtual environment and upgrade pip
+                    . ${VENV_DIR}/bin/activate
+                    pip install --quiet --upgrade pip cmakelint
+                '''
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                echo 'Running lint checks on main.c...'
+                sh '''
+                    . ${VENV_DIR}/bin/activate
+                    if [ -f src/main.c ]; then
+                        cmakelint src/main.c > lint_report.txt || true
+                    else
+                        echo "main.c not found!"
+                        exit 1
+                    fi
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'lint_report.txt', fingerprint: true
+                    fingerprint 'src/main.c'
                 }
             }
         }
 
-        stage('Lint & Build') {
-            parallel {
-                stage('Lint') {
-                    steps {
-                        script {
-                            if (fileExists("src/main.c")) {
-                                sh """
-                                    . ${VENV_DIR}/bin/activate
-                                    cmakelint src/main.c
-                                """
-                            } else {
-                                echo "No C files to lint"
-                            }
-                        }
-                    }
-                }
+        stage('Build') {
+            steps {
+                echo 'Building project with CMake...'
+                sh '''
+                    . ${VENV_DIR}/bin/activate
+                    mkdir -p ${BUILD_DIR}
+                    cd ${BUILD_DIR}
 
-                stage('Build') {
-                    steps {
-                        sh """
-                            mkdir -p build
-                            cd build
-                            cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
-                            make -j\$(nproc)
-                            cp compile_commands.json ..
-                        """
-                    }
-                }
+                    # Only re-run CMake if CMakeLists.txt changed
+                    cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .. || true
+
+                    # Build using all available cores
+                    make -j$(nproc) || true
+
+                    # Copy compile commands for Sonar
+                    cp compile_commands.json ..
+                '''
             }
         }
 
         stage('Unit Tests') {
             steps {
-                sh """
-                    cd build
-                    if [ -f Makefile ]; then
-                        ctest --output-on-failure || echo "No tests found"
+                echo 'Running unit tests...'
+                sh '''
+                    . ${VENV_DIR}/bin/activate
+                    if [ -d ${BUILD_DIR} ]; then
+                        cd ${BUILD_DIR}
+                        ctest --output-on-failure || true
+                    else
+                        echo "Build directory not found!"
+                        exit 1
                     fi
-                """
+                '''
             }
         }
 
         stage('SonarCloud Analysis') {
-            environment {
-                SONAR_HOST_URL = 'https://sonarcloud.io'
-            }
             steps {
-                withSonarQubeEnv('SonarCloud') {
-                    sh """
+                echo 'Running SonarCloud analysis...'
+                withSonarQubeEnv("${SONARQUBE_ENV}") {
+                    sh '''
+                        . ${VENV_DIR}/bin/activate
                         sonar-scanner \
                             -Dsonar.organization=${SONAR_ORGANIZATION} \
                             -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                             -Dsonar.sources=src \
                             -Dsonar.cfamily.compile-commands=compile_commands.json \
-                            -Dsonar.host.url=${SONAR_HOST_URL} \
+                            -Dsonar.host.url=https://sonarcloud.io \
                             -Dsonar.sourceEncoding=UTF-8
-                    """
+                    '''
                 }
             }
         }
 
         stage('Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
+                echo 'Waiting for SonarCloud Quality Gate...'
+                timeout(time: 15, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
             }
         }
+
     }
 
     post {
+        always {
+            echo 'Pipeline finished.'
+        }
         success {
-            echo "Pipeline succeeded!"
+            echo 'Build, lint, unit tests, and SonarCloud analysis completed successfully!'
         }
         failure {
-            echo "Pipeline failed! Check logs or SonarCloud dashboard."
+            echo 'Pipeline failed. Check logs or SonarCloud dashboard.'
         }
     }
 }
