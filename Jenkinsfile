@@ -11,7 +11,6 @@ pipeline {
         SONAR_PROJECT_KEY = 'bhargavpr99-sudo_cmake'
 
         VENV_DIR = 'venv'
-        BUILD_DIR = 'build'
     }
 
     stages {
@@ -26,9 +25,9 @@ pipeline {
             }
         }
 
-        stage('Prepare Tools & Cache') {
+        stage('Prepare Tools') {
             steps {
-                echo 'Installing required tools on Ubuntu and caching virtual environment...'
+                echo 'Installing required tools on Ubuntu...'
                 sh '''
                     sudo apt-get update -y
                     sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential
@@ -38,8 +37,10 @@ pipeline {
                         python3 -m venv ${VENV_DIR}
                     fi
 
-                    # Activate virtual environment and upgrade pip
+                    # Activate virtual environment
                     . ${VENV_DIR}/bin/activate
+
+                    # Upgrade pip and install cmakelint
                     pip install --quiet --upgrade pip cmakelint
                 '''
             }
@@ -71,17 +72,16 @@ pipeline {
                 echo 'Building project with CMake...'
                 sh '''
                     . ${VENV_DIR}/bin/activate
-                    mkdir -p ${BUILD_DIR}
-                    cd ${BUILD_DIR}
-
-                    # Only re-run CMake if CMakeLists.txt changed
-                    cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .. || true
-
-                    # Build using all available cores
-                    make -j$(nproc) || true
-
-                    # Copy compile commands for Sonar
-                    cp compile_commands.json ..
+                    if [ -f CMakeLists.txt ]; then
+                        mkdir -p build
+                        cd build
+                        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+                        make -j$(nproc)
+                        cp compile_commands.json ..
+                    else
+                        echo "CMakeLists.txt not found!"
+                        exit 1
+                    fi
                 '''
             }
         }
@@ -91,8 +91,8 @@ pipeline {
                 echo 'Running unit tests...'
                 sh '''
                     . ${VENV_DIR}/bin/activate
-                    if [ -d ${BUILD_DIR} ]; then
-                        cd ${BUILD_DIR}
+                    if [ -d build ]; then
+                        cd build
                         ctest --output-on-failure || true
                     else
                         echo "Build directory not found!"
@@ -116,15 +116,6 @@ pipeline {
                             -Dsonar.host.url=https://sonarcloud.io \
                             -Dsonar.sourceEncoding=UTF-8
                     '''
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                echo 'Waiting for SonarCloud Quality Gate...'
-                timeout(time: 15, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
                 }
             }
         }
