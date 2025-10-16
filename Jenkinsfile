@@ -8,7 +8,7 @@ pipeline {
         // SonarCloud Configuration
         SONARQUBE_ENV = 'SonarCloud'
         SONAR_ORGANIZATION = 'bhargavpr99-sudo'
-        SONAR_PROJECT_KEY = 'bhargavpr99'
+        SONAR_PROJECT_KEY = 'bhargavpr99-sudo_cmake'
         VENV_DIR = 'venv' // Python virtual environment
     }
 
