@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -11,14 +12,9 @@ pipeline {
             steps {
                 echo 'Installing required tools...'
                 sh '''
-                    # Install pipx and python3-venv if not installed
                     sudo apt update
-                    sudo apt install -y pipx python3-venv
-
-                    # Ensure pipx is initialized (required in some distros)
+                    sudo apt install -y pipx python3-venv cmake make g++
                     pipx ensurepath
-
-                    # Install cmakelint with pipx
                     pipx install cmakelint || true
                 '''
             }
@@ -33,7 +29,13 @@ pipeline {
 
         stage('Build') {
             steps {
-                echo 'Build step would go here.'
+                echo 'Building the project...'
+                sh '''
+                    mkdir -p build
+                    cd build
+                    cmake ..
+                    make
+                '''
             }
         }
     }
@@ -41,6 +43,15 @@ pipeline {
     post {
         always {
             echo 'Pipeline finished.'
+        }
+
+        success {
+            echo 'Archiving artifacts...'
+            archiveArtifacts artifacts: 'build/**', fingerprint: true
+        }
+
+        failure {
+            echo 'Build failed — no artifacts to archive.'
         }
     }
 }
