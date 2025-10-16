@@ -1,83 +1,83 @@
 pipeline {
-    agent any
-
+    agent { label 'linuxgit' }
     environment {
-        // Use a single Jenkins credential (username + password or API key)
-        ART_CRED = credentials('jfrog-user')
-        ART_URL = "https://trial2qnjvw.jfrog.io/artifactory/firmware-release-generic-local"
-        FIRMWARE_FILE = "myfirmware-15.bin"
+        GIT_REPO = 'https://github.com/bhargavpr99-sudo/cmake.git'
+        BRANCH = 'main'
     }
-
     stages {
-        stage('Checkout SCM') {
+        stage('Prepare Tools') {
             steps {
-                checkout([$class: 'GitSCM',
-                    branches: [[name: '*/master']],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/bhargavpr99-sudo/firmware-project.git',
-                        credentialsId: 'github-creds'
-                    ]]
-                ])
-            }
-        }
-
-        stage('Build Firmware') {
-            steps {
+                echo 'Installing required tools...'
                 sh '''
-                    mkdir -p build
-                    cd build
-                    cmake ..
-                    make
-                    # Create dummy firmware for testing if build doesn’t produce one
-                    echo "firmware binary content" > ${FIRMWARE_FILE}
+                    # Update and install Python3/pip3 if missing
+                    if ! command -v pip3 &>/dev/null; then
+                        sudo yum install -y python3 python3-pip || true
+                    fi
+                    # Install cmakelint
+                    pip3 install --quiet cmakelint
+                    # Install dos2unix
+                    if ! command -v dos2unix &>/dev/null; then
+                        sudo yum install -y dos2unix || true
+                    fi
+                    # Install cmake
+                    if ! command -v cmake &>/dev/null; then
+                        sudo yum install -y epel-release || true
+                        sudo yum install -y cmake || true
+                    fi
+                    
+                    # Install GCC/G++ compilers for C/C++ build
+                    if ! command -v gcc &>/dev/null; then
+                        sudo yum install -y gcc gcc-c++ || true
+                    fi
                 '''
             }
         }
-
-        stage('Upload to Artifactory') {
+        stage('Lint') {
             steps {
-                script {
-                    def maxRetries = 3
-                    def attempt = 1
-                    def success = false
-
-                    while (attempt <= maxRetries && !success) {
-                        echo "Uploading artifact (Attempt: ${attempt})..."
-                        def status = sh(
-                            script: """curl -L -u ${ART_CRED_USR}:${ART_CRED_PSW} \
--T build/${FIRMWARE_FILE} \
-${ART_URL}/firmware/${FIRMWARE_FILE} \
--w %{http_code} -o /dev/null""",
-                            returnStdout: true
-                        ).trim()
-
-                        if (status == '200' || status == '201') {
-                            echo "✅ Upload succeeded!"
-                            success = true
-                        } else {
-                            echo "❌ Upload failed with HTTP code: ${status}"
-                            if (attempt < maxRetries) {
-                                echo "Retrying in 5 seconds..."
-                                sleep 5
-                            }
-                            attempt++
-                        }
-                    }
-
-                    if (!success) {
-                        error("Max retries reached. Upload failed.")
-                    }
+                echo 'Running lint checks on main.c...'
+                sh '''
+                    if [ -f src/main.c ]; then
+                        cmakelint main.c > lint_report.txt
+                        # Fail build if lint errors found (uncomment if strict)
+                        # grep -q "Total Errors: [1-9]" lint_report.txt && exit 1 || true
+                    else
+                        echo "main.c not found!"
+                        exit 1
+                    fi
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'lint_report.txt', fingerprint: true
+                    fingerprint 'main.c'
                 }
             }
         }
+        stage('Build') {
+            steps {
+                echo 'Running build.sh...'
+                sh '''
+                    if [ -f build.sh ]; then
+                        dos2unix build.sh
+                        chmod +x build.sh
+                        bash build.sh
+                    else
+                        echo "build.sh not found!"
+                        exit 1
+                    fi
+                '''
+            }
+        }
     }
-
     post {
+        always {
+            echo 'Pipeline finished.'
+        }
         success {
-            echo "🎉 Pipeline completed successfully! Firmware uploaded to Artifactory."
+            echo 'Build and lint completed successfully!'
         }
         failure {
-            echo "⚠️ Pipeline failed. Check logs for details."
+            echo 'Pipeline failed. Check logs.'
         }
     }
 }
