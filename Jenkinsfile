@@ -2,13 +2,13 @@ pipeline {
     agent { label 'linuxgit' }
 
     environment {
-        GIT_REPO = 'https://gitlab.com/sandeep160/pipeline-e2e.git'
+        GIT_REPO = 'https://github.com/bhargavpr99-sudo/cmake.git'
         BRANCH = 'main'
 
         // SonarCloud Configuration
         SONARQUBE_ENV = 'SonarCloud'
-        SONAR_ORGANIZATION = 'sandeep160'
-        SONAR_PROJECT_KEY = 'sandeep160_pipeline-e2e'
+        SONAR_ORGANIZATION = 'bhargavpr99-sudo'
+        SONAR_PROJECT_KEY = 'bhargavpr99'
         VENV_DIR = 'venv' // Python virtual environment
     }
 
