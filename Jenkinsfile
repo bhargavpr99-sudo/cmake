@@ -3,15 +3,14 @@ pipeline {
 
     environment {
         PIPX_BIN_DIR = '/home/ubuntu/.local/bin'
-        PATH = "${PIPX_BIN_DIR}:${env.PATH}"
+        PATH = "${PIPX_BIN_DIR}:${env.PATH}:/usr/local/bin"
     }
 
     stages {
-
         stage('Prepare Tools') {
             steps {
+                echo '[INFO] Installing tools...'
                 sh '''
-                    echo "[INFO] Installing tools..."
                     sudo apt update
                     sudo apt install -y pipx python3-venv cmake make g++
 
@@ -47,9 +46,9 @@ pipeline {
                     sh '''
                         sonar-scanner \
                           -Dsonar.projectKey=cmake-sonar \
+                          -Dsonar.projectName=cmake-sonar \
                           -Dsonar.sources=. \
-                          -Dsonar.cfamily.build-wrapper-output=build \
-                          -Dsonar.projectName="cmake-sonar"
+                          -Dsonar.cfamily.compile-commands=build/compile_commands.json || true
                     '''
                 }
             }
@@ -62,11 +61,8 @@ pipeline {
         }
 
         success {
-            archiveArtifacts artifacts: 'build/*.bin', fingerprint: true
-        }
-
-        failure {
-            echo 'Build failed. Check logs.'
+            echo 'Archiving artifacts...'
+            archiveArtifacts artifacts: 'build/*.bin, build/*.elf', fingerprint: true
         }
     }
 }
