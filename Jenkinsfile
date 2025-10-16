@@ -1,7 +1,7 @@
 pipeline {
     agent { label 'linuxgit' }
     environment {
-        GIT_REPO = 'https://gitlab.com/sandeep160/pipeline-e2e.git'
+        GIT_REPO = 'https://github.com/bhargavpr99-sudo/cmake.git'
         BRANCH = 'main'
         VENV_DIR = 'venv' // Virtual environment directory
     }
