@@ -1,10 +1,17 @@
 pipeline {
     agent { label 'linuxgit' }
+
     environment {
-        GIT_REPO = 'https://github.com/bhargavpr99-sudo/cmake.git'
+        GIT_REPO = 'https://gitlab.com/sandeep160/pipeline-e2e.git'
         BRANCH = 'main'
-        VENV_DIR = 'venv' // Virtual environment directory
+
+        // SonarCloud Configuration
+        SONARQUBE_ENV = 'SonarCloud'
+        SONAR_ORGANIZATION = 'sandeep160'
+        SONAR_PROJECT_KEY = 'sandeep160_pipeline-e2e'
+        VENV_DIR = 'venv' // Python virtual environment
     }
+
     stages {
         stage('Prepare Tools') {
             steps {
@@ -14,11 +21,12 @@ set -e
 sudo apt-get update -y || true
 sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential || true
 
+# Create virtual environment for cmakelint
 if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv $VENV_DIR
 fi
 
-# Activate venv and install cmakelint using bash
+# Activate venv and install cmakelint
 bash -c "source $VENV_DIR/bin/activate && pip install --quiet cmakelint"
 ''')
             }
@@ -50,20 +58,60 @@ fi
 
         stage('Build') {
             steps {
-                echo 'Running build.sh...'
+                echo 'Running build with CMake...'
                 sh(script: '''
 bash -c "
 set -e
-if [ -f build.sh ]; then
-    dos2unix build.sh
-    chmod +x build.sh
-    bash build.sh
+if [ -f CMakeLists.txt ]; then
+    mkdir -p build
+    cd build
+    cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+    make -j$(nproc)
+    cp compile_commands.json ..
 else
-    echo 'build.sh not found!'
+    echo 'CMakeLists.txt not found!'
     exit 1
 fi
 "
 ''')
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                echo 'Running unit tests...'
+                sh(script: '''
+bash -c "
+set -e
+if [ -d build ]; then
+    cd build
+    ctest --output-on-failure
+else
+    echo 'Build directory not found!'
+    exit 1
+fi
+"
+''')
+            }
+        }
+
+        stage('SonarCloud Analysis') {
+            steps {
+                echo 'Running SonarCloud analysis...'
+                withSonarQubeEnv("${SONARQUBE_ENV}") {
+                    sh(script: '''
+bash -c "
+set -e
+sonar-scanner \
+  -Dsonar.organization=${SONAR_ORGANIZATION} \
+  -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+  -Dsonar.sources=src \
+  -Dsonar.cfamily.compile-commands=compile_commands.json \
+  -Dsonar.host.url=https://sonarcloud.io \
+  -Dsonar.sourceEncoding=UTF-8
+"
+''')
+                }
             }
         }
     }
@@ -73,10 +121,10 @@ fi
             echo 'Pipeline finished.'
         }
         success {
-            echo 'Build and lint completed successfully!'
+            echo 'Build, lint, and SonarCloud analysis completed successfully!'
         }
         failure {
-            echo 'Pipeline failed. Check logs.'
+            echo 'Pipeline failed. Check logs or SonarCloud dashboard.'
         }
     }
 }
