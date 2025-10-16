@@ -7,18 +7,13 @@ pipeline {
     }
 
     stages {
-        stage('Checkout SCM') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Prepare Tools') {
             steps {
                 echo '[INFO] Installing tools...'
                 sh '''
                     sudo apt update
                     sudo apt install -y pipx python3-venv cmake make g++
+
                     pipx ensurepath
                     pipx install cmakelint || true
                 '''
@@ -64,12 +59,10 @@ pipeline {
         always {
             echo 'Pipeline finished.'
         }
+
         success {
             echo 'Archiving artifacts...'
             archiveArtifacts artifacts: 'build/*.bin, build/*.elf', fingerprint: true
-        }
-        failure {
-            echo 'Build failed! Please check logs.'
         }
     }
 }
