@@ -34,8 +34,8 @@ pipeline {
                 sh '''
                     sudo apt-get update -y
                     sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential binutils
-                    python3 -m venv venv
-                    . venv/bin/activate
+                    python3 -m venv ${VENV_DIR}
+                    . ${VENV_DIR}/bin/activate
                     pip install --quiet --upgrade pip cmakelint
                 '''
             }
@@ -45,7 +45,7 @@ pipeline {
             steps {
                 echo "🔹 Running lint checks on main.c..."
                 sh '''
-                    . venv/bin/activate
+                    . ${VENV_DIR}/bin/activate
                     if [ -f src/main.c ]; then
                         cmakelint src/main.c
                     fi
@@ -58,7 +58,7 @@ pipeline {
             steps {
                 echo "🔹 Building project with CMake..."
                 sh '''
-                    . venv/bin/activate
+                    . ${VENV_DIR}/bin/activate
                     mkdir -p build
                     cd build
                     cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
@@ -77,7 +77,7 @@ pipeline {
             steps {
                 echo "🔹 Running unit tests..."
                 sh '''
-                    . venv/bin/activate
+                    . ${VENV_DIR}/bin/activate
                     if [ -d build ]; then
                         cd build
                         ctest --output-on-failure || echo "No tests found"
@@ -91,7 +91,7 @@ pipeline {
                 echo "🔹 Running SonarCloud analysis..."
                 withSonarQubeEnv("${SONARQUBE_ENV}") {
                     sh '''
-                        . venv/bin/activate
+                        . ${VENV_DIR}/bin/activate
                         sonar-scanner \
                             -Dsonar.organization=${SONAR_ORGANIZATION} \
                             -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
@@ -106,25 +106,27 @@ pipeline {
 
         stage('Upload to JFrog') {
             steps {
-                echo "🔹 Uploading artifacts to JFrog Artifactory..."
-                
-                rtServer (
-                    id: 'My-Artifactory-Server', 
-                    url: 'https://your-artifactory-url/artifactory', 
-                    credentialsId: 'Artifactory-Creds'
-                )
+                script {
+                    echo "🔹 Uploading artifacts to JFrog Artifactory..."
 
-                rtUpload (
-                    serverId: 'My-Artifactory-Server',
-                    spec: '''{
+                    // Define Artifactory server (make sure the ID exists in Jenkins → Configure System)
+                    def server = rtServer(
+                        id: 'My-Artifactory-Server'
+                    )
+
+                    // Upload specification
+                    def uploadSpec = """{
                         "files": [
                             {
                                 "pattern": "build/*.bin",
                                 "target": "my-repo/"
                             }
                         ]
-                    }'''
-                )
+                    }"""
+
+                    // Perform upload
+                    server.upload(uploadSpec)
+                }
             }
         }
     }
