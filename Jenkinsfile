@@ -110,7 +110,7 @@ pipeline {
                     echo "🔹 Uploading artifacts to JFrog Artifactory..."
 
                     // Replace with your configured Artifactory server ID
-                    def server = Artifactory.server 'jfrog-server'
+                    def server = Artifactory.server 'My-Artifactory-Server'
 
                     def uploadSpec = """{
                         "files": [
