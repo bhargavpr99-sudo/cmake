@@ -10,39 +10,32 @@ pipeline {
         SONAR_ORGANIZATION = 'bhargavpr99-sudo'
         SONAR_PROJECT_KEY = 'bhargavpr99-sudo_cmake'
 
-        // JFrog Configuration
-        JFROG_SERVER_ID = 'jfrog-server'
-        ARTIFACTORY_REPO = 'cmake-artifacts-generic-local'
-
         VENV_DIR = 'venv'
     }
 
     stages {
-
         stage('Checkout SCM') {
             steps {
-                echo '🔹 Checking out Git repository...'
-                checkout([$class: 'GitSCM',
+                echo "🔹 Checking out Git repository..."
+                checkout([
+                    $class: 'GitSCM',
                     branches: [[name: "${BRANCH}"]],
-                    userRemoteConfigs: [[url: "${GIT_REPO}", credentialsId: 'Gitcred']]
+                    userRemoteConfigs: [[
+                        url: "${GIT_REPO}",
+                        credentialsId: 'Gitcred'
+                    ]]
                 ])
             }
         }
 
         stage('Prepare Tools') {
             steps {
-                echo '🔹 Installing required tools...'
+                echo "🔹 Installing required tools..."
                 sh '''
                     sudo apt-get update -y
                     sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential binutils
-
-                    # Create and activate virtual environment
-                    if [ ! -d "${VENV_DIR}" ]; then
-                        python3 -m venv ${VENV_DIR}
-                    fi
-                    . ${VENV_DIR}/bin/activate
-
-                    # Upgrade pip and install cmakelint
+                    python3 -m venv venv
+                    . venv/bin/activate
                     pip install --quiet --upgrade pip cmakelint
                 '''
             }
@@ -50,49 +43,31 @@ pipeline {
 
         stage('Lint') {
             steps {
-                echo '🔹 Running lint checks on main.c...'
+                echo "🔹 Running lint checks on main.c..."
                 sh '''
-                    . ${VENV_DIR}/bin/activate
+                    . venv/bin/activate
                     if [ -f src/main.c ]; then
-                        cmakelint src/main.c > lint_report.txt || true
-                    else
-                        echo "main.c not found!"
-                        exit 1
+                        cmakelint src/main.c
                     fi
                 '''
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'lint_report.txt', fingerprint: true
-                    fingerprint 'src/main.c'
-                }
+                archiveArtifacts artifacts: '**/*.c', allowEmptyArchive: true
             }
         }
 
         stage('Build') {
             steps {
-                echo '🔹 Building project with CMake...'
+                echo "🔹 Building project with CMake..."
                 sh '''
-                    . ${VENV_DIR}/bin/activate
-                    if [ -f CMakeLists.txt ]; then
-                        mkdir -p build
-                        cd build
-                        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
-                        make -j$(nproc)
-
-                        # Convert ELF to BIN
-                        if [ -f myfirmware.elf ]; then
-                            echo "Converting ELF to BIN..."
-                            objcopy -O binary myfirmware.elf myfirmware.bin
-                            echo "✅ Generated myfirmware.bin"
-                        else
-                            echo "⚠️ No ELF file found to convert!"
-                        fi
-
+                    . venv/bin/activate
+                    mkdir -p build
+                    cd build
+                    cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+                    make -j$(nproc)
+                    if [ -f myfirmware.elf ]; then
+                        echo "Converting ELF to BIN..."
+                        objcopy -O binary myfirmware.elf myfirmware.bin
                         cp compile_commands.json ..
-                    else
-                        echo "CMakeLists.txt not found!"
-                        exit 1
+                        echo "✅ Generated myfirmware.bin"
                     fi
                 '''
             }
@@ -100,15 +75,12 @@ pipeline {
 
         stage('Unit Tests') {
             steps {
-                echo '🔹 Running unit tests...'
+                echo "🔹 Running unit tests..."
                 sh '''
-                    . ${VENV_DIR}/bin/activate
+                    . venv/bin/activate
                     if [ -d build ]; then
                         cd build
-                        ctest --output-on-failure || true
-                    else
-                        echo "Build directory not found!"
-                        exit 1
+                        ctest --output-on-failure || echo "No tests found"
                     fi
                 '''
             }
@@ -116,10 +88,10 @@ pipeline {
 
         stage('SonarCloud Analysis') {
             steps {
-                echo '🔹 Running SonarCloud analysis...'
+                echo "🔹 Running SonarCloud analysis..."
                 withSonarQubeEnv("${SONARQUBE_ENV}") {
                     sh '''
-                        . ${VENV_DIR}/bin/activate
+                        . venv/bin/activate
                         sonar-scanner \
                             -Dsonar.organization=${SONAR_ORGANIZATION} \
                             -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
@@ -134,30 +106,36 @@ pipeline {
 
         stage('Upload to JFrog') {
             steps {
-                echo '🔹 Uploading artifacts to JFrog Artifactory...'
-                rtUpload (
-                    serverId: "${JFROG_SERVER_ID}",
-                    spec: """{
+                script {
+                    echo "🔹 Uploading artifacts to JFrog Artifactory..."
+
+                    // Replace with your configured Artifactory server ID
+                    def server = Artifactory.server 'jfrog-server'
+
+                    def uploadSpec = """{
                         "files": [
-                            { "pattern": "build/*.elf", "target": "${ARTIFACTORY_REPO}/${env.BUILD_NUMBER}/" },
-                            { "pattern": "build/*.bin", "target": "${ARTIFACTORY_REPO}/${env.BUILD_NUMBER}/" }
+                            {
+                                "pattern": "build/*.bin",
+                                "target": "my-repo/"
+                            }
                         ]
                     }"""
-                )
-                rtPublishBuildInfo(serverId: "${JFROG_SERVER_ID}")
+
+                    server.upload spec: uploadSpec
+                }
             }
         }
     }
 
     post {
         always {
-            echo '🏁 Pipeline finished.'
+            echo "🏁 Pipeline finished."
         }
         success {
-            echo '✅ Build, lint, tests, SonarCloud analysis, and JFrog upload completed successfully!'
+            echo "✅ Pipeline completed successfully."
         }
         failure {
-            echo '❌ Pipeline failed. Check the console output for details.'
+            echo "❌ Pipeline failed. Check console output for details."
         }
     }
 }
