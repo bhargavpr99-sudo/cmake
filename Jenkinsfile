@@ -11,8 +11,8 @@ pipeline {
         SONAR_PROJECT_KEY = 'bhargavpr99-sudo_cmake'
 
         // JFrog Configuration
+        JFROG_URL = 'https://trial2qnjvw.jfrog.io/artifactory/cmake-artifacts-generic-local/'
         JFROG_SERVER_ID = 'jfrog-server'
-        ARTIFACTORY_REPO = 'cmake-artifacts'
 
         VENV_DIR = 'venv'
     }
@@ -36,13 +36,10 @@ pipeline {
                     sudo apt-get update -y
                     sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential binutils
 
-                    # Create and activate virtual environment
                     if [ ! -d "${VENV_DIR}" ]; then
                         python3 -m venv ${VENV_DIR}
                     fi
                     . ${VENV_DIR}/bin/activate
-
-                    # Upgrade pip and install cmakelint
                     pip install --quiet --upgrade pip cmakelint
                 '''
             }
@@ -80,13 +77,11 @@ pipeline {
                         cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
                         make -j$(nproc)
 
-                        # Convert ELF to BIN
                         if [ -f myfirmware.elf ]; then
                             echo "Converting ELF to BIN..."
                             objcopy -O binary myfirmware.elf myfirmware.bin
-                            echo "✅ Generated myfirmware.bin"
                         else
-                            echo "⚠️ No ELF file found to convert!"
+                            echo "⚠️ No ELF file found!"
                         fi
 
                         cp compile_commands.json ..
@@ -135,17 +130,11 @@ pipeline {
         stage('Upload to JFrog') {
             steps {
                 echo '🔹 Uploading artifacts to JFrog Artifactory...'
-                rtUpload (
-                    serverId: "${JFROG_SERVER_ID}",
-                    spec: """{
-                        "files": [
-                            { "pattern": "build/*.elf", "target": "${ARTIFACTORY_REPO}/${env.BUILD_NUMBER}/" },
-                            { "pattern": "build/*.bin", "target": "${ARTIFACTORY_REPO}/${env.BUILD_NUMBER}/" }
-                        ]
-                    }"""
-                )
-
-                rtPublishBuildInfo(serverId: "${JFROG_SERVER_ID}")
+                sh """
+                    jfrog rt upload "build/*.elf" "${JFROG_URL}\${BUILD_NUMBER}/" --server-id=${JFROG_SERVER_ID}
+                    jfrog rt upload "build/*.bin" "${JFROG_URL}\${BUILD_NUMBER}/" --server-id=${JFROG_SERVER_ID}
+                    jfrog rt build-publish ${BUILD_NUMBER} --server-id=${JFROG_SERVER_ID}
+                """
             }
         }
     }
