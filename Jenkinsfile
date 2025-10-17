@@ -5,26 +5,20 @@ pipeline {
         GIT_REPO = 'https://github.com/bhargavpr99-sudo/cmake.git'
         BRANCH = 'main'
 
-        // SonarCloud Configuration
+        // SonarCloud configuration
         SONARQUBE_ENV = 'SonarCloud'
         SONAR_ORGANIZATION = 'bhargavpr99-sudo'
         SONAR_PROJECT_KEY = 'bhargavpr99-sudo_cmake'
 
-        VENV_DIR = 'venv'
+        // Python venv
+        VENV_DIR = "${WORKSPACE}/venv"
     }
 
     stages {
         stage('Checkout SCM') {
             steps {
                 echo "🔹 Checking out Git repository..."
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: "${BRANCH}"]],
-                    userRemoteConfigs: [[
-                        url: "${GIT_REPO}",
-                        credentialsId: 'Gitcred'
-                    ]]
-                ])
+                git branch: "${BRANCH}", url: "${GIT_REPO}", credentialsId: 'Gitcred'
             }
         }
 
@@ -46,11 +40,9 @@ pipeline {
                 echo "🔹 Running lint checks on main.c..."
                 sh '''
                     . ${VENV_DIR}/bin/activate
-                    if [ -f src/main.c ]; then
-                        cmakelint src/main.c
-                    fi
+                    [ -f src/main.c ] && cmakelint src/main.c || echo "No C files to lint"
                 '''
-                archiveArtifacts artifacts: '**/*.c', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'src/main.c', allowEmptyArchive: true
             }
         }
 
@@ -90,7 +82,7 @@ pipeline {
             steps {
                 echo "🔹 Running SonarCloud analysis..."
                 withSonarQubeEnv("${SONARQUBE_ENV}") {
-                    sh '''
+                    sh """
                         . ${VENV_DIR}/bin/activate
                         sonar-scanner \
                             -Dsonar.organization=${SONAR_ORGANIZATION} \
@@ -99,7 +91,7 @@ pipeline {
                             -Dsonar.cfamily.compile-commands=compile_commands.json \
                             -Dsonar.host.url=https://sonarcloud.io \
                             -Dsonar.sourceEncoding=UTF-8
-                    '''
+                    """
                 }
             }
         }
@@ -108,13 +100,7 @@ pipeline {
             steps {
                 script {
                     echo "🔹 Uploading artifacts to JFrog Artifactory..."
-
-                    // Define Artifactory server (make sure the ID exists in Jenkins → Configure System)
-                    def server = rtServer(
-                        id: 'My-Artifactory-Server'
-                    )
-
-                    // Upload specification
+                    def server = Artifactory.server 'My-Artifactory-Server' // Replace with your server ID
                     def uploadSpec = """{
                         "files": [
                             {
@@ -123,20 +109,15 @@ pipeline {
                             }
                         ]
                     }"""
-
-                    // Perform upload
-                    server.upload(uploadSpec)
+                    server.upload spec: uploadSpec
                 }
             }
         }
     }
 
     post {
-        always {
-            echo "🏁 Pipeline finished."
-        }
         success {
-            echo "✅ Pipeline completed successfully."
+            echo "🏁 Pipeline finished successfully!"
         }
         failure {
             echo "❌ Pipeline failed. Check console output for details."
