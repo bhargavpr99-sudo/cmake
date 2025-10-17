@@ -106,23 +106,25 @@ pipeline {
 
         stage('Upload to JFrog') {
             steps {
-                script {
-                    echo "🔹 Uploading artifacts to JFrog Artifactory..."
+                echo "🔹 Uploading artifacts to JFrog Artifactory..."
+                
+                rtServer (
+                    id: 'My-Artifactory-Server', 
+                    url: 'https://your-artifactory-url/artifactory', 
+                    credentialsId: 'Artifactory-Creds'
+                )
 
-                    // Replace with your configured Artifactory server ID
-                    def server = Artifactory.server 'My-Artifactory-Server'
-
-                    def uploadSpec = """{
+                rtUpload (
+                    serverId: 'My-Artifactory-Server',
+                    spec: '''{
                         "files": [
                             {
                                 "pattern": "build/*.bin",
                                 "target": "my-repo/"
                             }
                         ]
-                    }"""
-
-                    server.upload spec: uploadSpec
-                }
+                    }'''
+                )
             }
         }
     }
