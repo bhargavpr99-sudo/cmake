@@ -12,6 +12,12 @@ pipeline {
 
         // Python venv
         VENV_DIR = "${WORKSPACE}/venv"
+
+        // JFrog Artifactory details
+        ARTIFACTORY_URL = 'https://trial2qnjvw.jfrog.io/artifactory/'   // 🔹 replace with your JFrog URL
+        JFROG_REPO = 'cmake-artifacts-generic-local'                                 // 🔹 replace with your target repo name
+        JFROG_USER = credentials('jfrog-user')                       // 🔹 Jenkins credential ID for JFrog username
+        JFROG_API_KEY = credentials('cmVmdGtuOjAxOjE3OTIyMTI1ODk6bXRYSjZ3ejMwV3lNbjYxQm1SOUxIZVBYd25C')                 // 🔹 Jenkins credential ID for JFrog API key or password
     }
 
     stages {
@@ -98,19 +104,18 @@ pipeline {
 
         stage('Upload to JFrog') {
             steps {
-                script {
-                    echo "🔹 Uploading artifacts to JFrog Artifactory..."
-                    def server = Artifactory.server 'My-Artifactory-Server' // Replace with your server ID
-                    def uploadSpec = """{
-                        "files": [
-                            {
-                                "pattern": "build/*.bin",
-                                "target": "my-repo/"
-                            }
-                        ]
-                    }"""
-                    server.upload spec: uploadSpec
-                }
+                echo "🔹 Uploading artifacts to JFrog Artifactory..."
+                sh '''
+                    if [ -f build/myfirmware.bin ]; then
+                        echo "Uploading myfirmware.bin to Artifactory..."
+                        curl -u "${JFROG_USER}:${JFROG_API_KEY}" \
+                             -T build/myfirmware.bin \
+                             "${ARTIFACTORY_URL}/${JFROG_REPO}/myfirmware.bin"
+                        echo "✅ Upload completed successfully."
+                    else
+                        echo "⚠️ No build artifact found to upload."
+                    fi
+                '''
             }
         }
     }
