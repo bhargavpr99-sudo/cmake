@@ -16,7 +16,7 @@ pipeline {
         // JFrog Artifactory details
         ARTIFACTORY_URL = 'https://trial2qnjvw.jfrog.io/artifactory/'   // 🔹 replace with your JFrog URL
         JFROG_REPO = 'cmake-artifacts-generic-local'                                 // 🔹 replace with your target repo name
-        JFROG_USER = credentials('jfrog-creds')                       // 🔹 Jenkins credential ID for JFrog username
+        JFROG_USER = credentials('jfrog-api-key')                       // 🔹 Jenkins credential ID for JFrog username
         JFROG_API_KEY = credentials('jfrog-api-key') // 🔹 Jenkins credential ID for JFrog API key or password
     }
 
