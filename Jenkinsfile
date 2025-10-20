@@ -2,6 +2,7 @@ pipeline {
     agent { label 'linuxgit' }
 
     environment {
+        // Git repository details
         GIT_REPO = 'https://github.com/bhargavpr99-sudo/cmake.git'
         BRANCH = 'main'
 
@@ -10,14 +11,13 @@ pipeline {
         SONAR_ORGANIZATION = 'bhargavpr99-sudo'
         SONAR_PROJECT_KEY = 'bhargavpr99-sudo_cmake'
 
-        // Python venv
+        // Python virtual environment
         VENV_DIR = "${WORKSPACE}/venv"
 
         // JFrog Artifactory details
-        ARTIFACTORY_URL = 'https://trial2qnjvw.jfrog.io/artifactory/'   // 🔹 replace with your JFrog URL
-        JFROG_REPO = 'cmake-artifacts-generic-local'                                 // 🔹 replace with your target repo name
-        JFROG_USER = credentials('jfrog-user')                       // 🔹 Jenkins credential ID for JFrog username
-        JFROG_API_KEY = credentials('jfrog-api-key') // 🔹 Jenkins credential ID for JFrog API key or password
+        ARTIFACTORY_URL = 'https://trial2qnjvw.jfrog.io/artifactory'
+        JFROG_REPO = 'cmake-artifacts-generic-local'
+        JFROG_CREDS = credentials('jfrog-user')   // ✅ Single Jenkins credential (Username + API key/token)
     }
 
     stages {
@@ -33,7 +33,7 @@ pipeline {
                 echo "🔹 Installing required tools..."
                 sh '''
                     sudo apt-get update -y
-                    sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential binutils
+                    sudo apt-get install -y python3 python3-venv python3-pip dos2unix cmake build-essential binutils curl
                     python3 -m venv ${VENV_DIR}
                     . ${VENV_DIR}/bin/activate
                     pip install --quiet --upgrade pip cmakelint
@@ -43,7 +43,7 @@ pipeline {
 
         stage('Lint') {
             steps {
-                echo "🔹 Running lint checks on main.c..."
+                echo "🔹 Running lint checks on C files..."
                 sh '''
                     . ${VENV_DIR}/bin/activate
                     [ -f src/main.c ] && cmakelint src/main.c || echo "No C files to lint"
@@ -108,7 +108,7 @@ pipeline {
                 sh '''
                     if [ -f build/myfirmware.bin ]; then
                         echo "Uploading myfirmware.bin to Artifactory..."
-                        curl -u "${JFROG_USER}:${JFROG_API_KEY}" \
+                        curl -u ${JFROG_CREDS_USR}:${JFROG_CREDS_PSW} \
                              -T build/myfirmware.bin \
                              "${ARTIFACTORY_URL}/${JFROG_REPO}/myfirmware.bin"
                         echo "✅ Upload completed successfully."
