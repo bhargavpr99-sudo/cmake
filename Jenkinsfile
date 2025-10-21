@@ -121,8 +121,11 @@ pipeline {
     }
 
     post {
+        always {
+            echo "Pipeline finished."
+        }
         success {
-            echo "🏁 Pipeline finished successfully!"
+            echo "Build, lint, unit tests, and SonarCloud analysis completed successfully!"
         }
         failure {
             echo "❌ Pipeline failed. Check console output for details."
